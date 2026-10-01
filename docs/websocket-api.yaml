@@ -1,0 +1,129 @@
+asyncapi: 2.6.0
+info:
+  title: Pulse WebSocket API
+  version: 1.0.0
+  description: Client price feed and message endpoint, plus a live connected-client monitor for administrators.
+servers:
+  local:
+    url: localhost:8080
+    protocol: ws
+    description: Local backend exposed by Docker Compose
+channels:
+  /ws:
+    description: Client connection. Receives price, status, chat, ack, and error events.
+    publish:
+      operationId: receiveClientEvents
+      message:
+        oneOf:
+          - $ref: '#/components/messages/Price'
+          - $ref: '#/components/messages/Status'
+          - $ref: '#/components/messages/Chat'
+          - $ref: '#/components/messages/Acknowledgement'
+          - $ref: '#/components/messages/Error'
+    subscribe:
+      operationId: sendClientMessage
+      message:
+        $ref: '#/components/messages/ClientMessage'
+  /ws/admin:
+    description: Read-only live connected-client monitor. Receives an initial snapshot and refreshed snapshots on client connect/disconnect, plus clientMessage events.
+    publish:
+      operationId: receiveAdminEvents
+      message:
+        oneOf:
+          - $ref: '#/components/messages/Clients'
+          - $ref: '#/components/messages/AdminClientMessage'
+          - $ref: '#/components/messages/Error'
+    subscribe:
+      operationId: adminSendUnsupportedMessage
+      message:
+        $ref: '#/components/messages/AdminReadOnlyError'
+components:
+  messages:
+    ClientMessage:
+      name: ClientMessage
+      payload:
+        type: object
+        required: [type, message]
+        properties:
+          type: { type: string, const: chat }
+          message: { type: string, minLength: 1, maxLength: 500 }
+          messageId: { type: string, description: Optional client correlation ID echoed in the acknowledgement. }
+      examples:
+        - payload: { type: chat, message: Hello from a client, messageId: msg-001 }
+    Chat:
+      name: ChatBroadcast
+      payload:
+        type: object
+        properties:
+          type: { type: string, const: chat }
+          message: { type: string }
+          fromSessionId: { type: string }
+          timestamp: { type: string, format: date-time }
+    Acknowledgement:
+      name: ClientAcknowledgement
+      payload:
+        type: object
+        properties:
+          type: { type: string, const: ack }
+          message: { type: string }
+          messageId: { type: string }
+          timestamp: { type: string, format: date-time }
+    Status:
+      name: ClientStatus
+      payload:
+        type: object
+        properties:
+          type: { type: string, const: status }
+          connectedDevices: { type: integer }
+          timestamp: { type: string, format: date-time }
+    Price:
+      name: PriceUpdate
+      payload:
+        type: object
+        properties:
+          type: { type: string, const: price }
+          symbol: { type: string }
+          price: { type: number }
+          change: { type: number }
+          connectedDevices: { type: integer }
+          timestamp: { type: string, format: date-time }
+    Clients:
+      name: ConnectedClientsSnapshot
+      payload:
+        type: object
+        properties:
+          type: { type: string, const: clients }
+          connectedDevices: { type: integer }
+          timestamp: { type: string, format: date-time }
+          clients:
+            type: array
+            items:
+              type: object
+              properties:
+                sessionId: { type: string }
+                ip: { type: string, description: Remote address observed by the backend; may be a proxy or container address. }
+                device: { type: string, description: User-Agent header, not a verified hardware identity. }
+                connectedAt: { type: string, format: date-time }
+    AdminClientMessage:
+      name: AdminClientMessageEvent
+      payload:
+        type: object
+        properties:
+          type: { type: string, const: clientMessage }
+          sessionId: { type: string }
+          message: { type: string }
+          timestamp: { type: string, format: date-time }
+    Error:
+      name: Error
+      payload:
+        type: object
+        properties:
+          type: { type: string, const: error }
+          message: { type: string }
+    AdminReadOnlyError:
+      name: AdminReadOnlyError
+      payload:
+        type: object
+        properties:
+          type: { type: string, const: error }
+          message: { type: string, const: Admin endpoint is read-only. }
